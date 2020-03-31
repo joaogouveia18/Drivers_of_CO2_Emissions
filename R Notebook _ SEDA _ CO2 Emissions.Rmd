@@ -1,0 +1,691 @@
+---
+title: "SEDA Report - CO2 Emissions"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+
+
+
+### Introduction
+
+This project was proposed and oriented by Prof.Maria Helena Batista and by Prof.Jorge Mendes in the context of the Statistics for Enterprise Data Analysis course from Nova Information Management School. For its purpose, the group decided to analyze the CO$_{2}$ emissions across the World. Thus, a data set was collected, containing several variables related with this issue that were retrieved from various sources (their definitions and metrics will be further stated).
+
+Recently, the New Green Deal has taken the US Government's daily discussions by storm in the beggining of 2019. Indeed, this proposed economic stimulus package that aims to address climate change and economic inequality is becoming more essential than ever. Hence the importance of studying the issue it addresses and what can be expected in the future. As it is commonly known, the greenhouse gases are considered to be the main drivers for this current climate crisis, being the CO$_{2}$ the most abundant one.
+
+Under this scenario, this project aims to identify and measure the effects of the various aspects that can help to explain the differences in CO$_{2}$ emissions from country to country and, additionally, how is Portugal addresing this issue. The studied variables were chosen based on the theoretical background and data available. A complete description of each variable is following presented, as well as its sources:
+
+- _Continent_ - name of the continent the respective country belongs to
+- _CO2emi_ - CO$_{2}$ emisions in metric tons per capita in 2014 (World Bank)
+- _Pest_ - use per are of cropland, measured in kg/ha,  in 2014 (FAO)
+- _CattleProd_ - Total livestock count of live cattle, measured in thousands of heads, in 2014 (FAO)
+- _Rpop_ - thousands of people living in rural areas in 2014 as defined by the national statistical offices (World Bank)
+- _Upop_ - thousands of people living in urban areas in 2014 as defined by the national statistical offices (World Bank)
+- _GDPcap_ - Gross Domestic Product divided by midyear population in 2014, measured in current US$ (World Bank)
+- _ElConsCap_ - Electric power consumption per capita in 2014, measured in kWh (World Bank)
+- _ElRenProd_ - Electricity production from renewable sources in 2014 (which includes geothermal, solar, tides, wind, biomass and biofuels), measured in millions of kWh (World Bank)
+
+This study is composed by three different sections: a first one where a descriptive analysis of the CO$_{2}$ emissions is made, a second one in which a multiple linear regression model is developed and, finally, a time series analysis.
+
+
+
+
+
+### Descriptive Analysis
+
+
+Before moving to the analysis itself, the dataset must be imported.
+
+
+```{r}
+library(readxl)
+dtco2_complete <- read_excel("datasets/CO2_World.xlsx")
+```
+
+
+Once the dataset is imported, a superficial analysis to the existent variables is done.
+
+
+```{r}
+str(dtco2_complete)
+```
+
+
+Through this initial analysis, it is possible to see the dataset comprises the information about __112 countries__. Additionally, the dataset is composed by one categorical variable ( _Continent_), with all the other 8 being numerical (including the dependent one, _CO2emi_)
+In the following table, one can see the absolute frequency per _Continent_.
+
+
+```{r}
+library('plyr')
+ncont <- count(dtco2_complete, 'Continent')
+ncont
+```
+
+
+One can conclude from the previous analysis that the countries from dataset are not equally distributed across the countries. By other words, it is possible to see that Oceania, for instance, is only represented by two countries (Australia and New Zealand) and this fact is important to bear in mind for further analysis.
+
+Moreover, the following table contains various general descriptive analysis of each numerical variable.
+
+
+```{r}
+library('pastecs')
+summ <- round(stat.desc(dtco2_complete[,3:10]),2)
+summ
+```
+
+
+The previous table shows there is no missing values neither null ones in any variable.
+
+Furthermore, focusing on the dependent variable, the graph belows contains the boxplot and the histogram regarding all the 112 countries' values of CO$_{2}$ emissions.
+
+
+```{r fig.width = 10}
+
+# Layout to split the screen
+layout(mat = matrix(c(1,2),2,1, byrow=TRUE),  height = c(1,8))
+par(mar=c(0, 3.1, 1.1, 2.1))
+boxplot(dtco2_complete$CO2emi , horizontal=TRUE , xaxt="n", main="CO2 Emissions per Capita" , frame=F)
+par(mar=c(4, 3.1, 1.1, 2.1))
+hist(dtco2_complete$CO2emi , breaks=40 , main="" , xlab="CO2 Emissions per Capita", ylab="Number of Countries")
+```
+
+
+As one can infer from the the boxplot, there are several outliers in this variable. Another question that was raised is whether there are differences in the CO$_{2}$ emissions from continent to continent.
+
+
+```{r message=FALSE}
+
+library('magrittr')
+library("ggpubr")
+library('ggplot2')
+
+ggboxplot(dtco2_complete, x = "Continent", y = "CO2emi", main="Boxplot of CO2 Emissions per Continent") +
+  stat_summary(fun.y=mean, colour="red", geom="point", shape=18, size=3,show.legend = TRUE)
+```
+
+
+Contrary to what the group was expecting, Oceania is the continent that registers the highest mean of CO$_{2}$ emissions per capita.Nevertheless, it is important to bear in mind this Continent is only represented by two countries. On the other side, the countries that register the highest levels of CO$_{2}$ emissions per capita are surprisingly __Qatar__ and __Trinidad and Tobago__, belonging to Asia and North America respectivelly. Although this analysis is made upon data from 2014, it seems interesting that United States is "only" the 6^th^ country with the highest CO$_{2}$ emissions per capita, which is surprising due to the past US has with environmental treaties (first with the Kyoto Protocol and, more recently, with the Paris Agreement).
+
+Furthermore, the group decided to analyze the relationships between these variables by computing the correlation matrix, which is following presented.
+
+
+```{r}
+corrmat <- round(cor(dtco2_complete[,3:10]),2)
+corrmat
+
+```
+
+
+There are important insights tha must be taken into account when developing the regression model. The first one are the high positive correlations between _CattleProd_ and both _Rpop_ (+0.68) and _Upop_ (+0.72).The second one is precisely between the two latter (+0.85). Finally, it is also possible to highlight the correlation coefficient between _ElRenProd_ and _Upop_ (+0.74).
+
+
+
+
+
+
+### Regression Analisys
+
+
+As previously mentioned, one of the main objectives with this research study is to identify and to measure the effects of several variables on the CO$_{2}$ emissions per capita in each country. Indeed, by developing a regression model, the group aims to determine the simultaneous effect of various independent variables on a dependent one using the least squares principle.
+
+But firstly, the dataset contains a categorical variable _Continent_ that might have an effect on the CO$_{2}$ emissions level. As such, its transformation into dummies variables is needed in order to be possible to add this factor to the model.The following command adds six new collumns (the number of _Continent_ unique values) to the dataset. For instance, if the entry is from an European country, the new variable _Cont.Europe_ takes the values 1, otherwise is 0.
+
+
+```{r}
+library(varhandle)
+dtco2_complete <- cbind(dtco2_complete, to.dummy(dtco2_complete$Continent, "Cont"))
+
+```
+
+
+Thus, the categorical variable _Continent_ were no long needed.
+
+
+```{r}
+dtco2 <- dtco2_complete[,c(1,3:16)]
+```
+
+
+Once again, by the analysis of the following boxplot, it is possible to see there are outliers in the dependent variable. However, the presence of outliers can also be stated not only on _CO2emi_ but also on the exogenous variables of this dataset (for example, in _Pest_).
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(dtco2$CO2emi, main="CO2 Emissions", boxwex=0.1)
+boxplot(dtco2$Pest, main="Pesticides per Are of Cropland", boxwex=0.1)
+```
+
+
+As such, since the results of a regression analysis can be sensitive to outliers (either on _y_ or in the space of the predictors) it seems important to treat this set of observations to avoid serious ramifications on the validity of the inferences drawn from the final model. Nevertheless, there is  no absolute right method to deal with these observations, and the selected one must take into account the various conditions of the study.
+
+In this case, 112 entries is not considered as large dataset and so, the removal of these outliers would jeopardize the robustness of future inferences. Having this, the group decided to apply the capping/flooring approach. In this technique, the values that lie below the 1.5 * IQR limits are replaced by the value of 5^th^ %ile and those that lie above the upper limit with the value of 95th %ile. For this purpose, the following function were created.
+
+
+```{r}
+treat_outliers <- function(x) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = T)
+  caps <- quantile(x, probs=c(.05, .95), na.rm = T)
+  H <- 1.5 * IQR(x, na.rm = T)
+  x[x < (qnt[1] - H)] <- caps[1]
+  x[x > (qnt[2] + H)] <- caps[2]
+  return(x)
+}
+
+```
+
+
+For the sake of an example, this sample of code applies the function to the _CO2emi_. The respective effect can also be observable in the two following boxplots.
+
+
+```{r}
+
+CO2emi_t <- treat_outliers(dtco2$CO2emi)
+
+par(mfrow=c(1,2))
+boxplot(dtco2$CO2emi, main="Before Cap/Floor", boxwex=0.1, ylim=c(0,45))
+boxplot(CO2emi_t, main="After Cap/Floor", boxwex=0.1, ylim=c(0,45))
+
+```
+
+
+Now that the effect of the funtion _treat outielrs_ is understood, the same was applied to all the other variables present in this dataset (to these treated variables, the sufix "_t" will be attached). Once these new treated variables were created, they were appended into a new dataset called __dt__ with the exact same variables but without outliers.
+
+
+```{r}
+Pest_t <- treat_outliers(dtco2$Pest)
+CattleProd_t <- treat_outliers(dtco2$CattleProd)
+Rpop_t <- treat_outliers(dtco2$Rpop)
+Upop_t <- treat_outliers(dtco2$Upop)
+GDPcap_t <- treat_outliers(dtco2$GDPcap)
+ElConsCap_t <- treat_outliers(dtco2$ElConsCap)
+ElRenProd_t <- treat_outliers(dtco2$ElRenProd)
+
+dt <- data.frame(dtco2$Country, CO2emi_t, Pest_t, CattleProd_t, Rpop_t, Upop_t, GDPcap_t, ElConsCap_t, ElRenProd_t, dtco2$Cont.Africa, dtco2$Cont.Asia, dtco2$Cont.Europe, dtco2$Cont.NAmerica, dtco2$Cont.Oceania, dtco2$Cont.SAmerica)
+
+colnames(dt)[colnames(dt)=="dtco2.Country"] <- "country"
+colnames(dt)[colnames(dt)=="dtco2.Cont.Africa"] <- "Africa"
+colnames(dt)[colnames(dt)=="dtco2.Cont.Asia"] <- "Asia"
+colnames(dt)[colnames(dt)=="dtco2.Cont.Europe"] <- "Europe"
+colnames(dt)[colnames(dt)=="dtco2.Cont.NAmerica"] <- "NAmerica"
+colnames(dt)[colnames(dt)=="dtco2.Cont.Oceania"] <- "Oceania"
+colnames(dt)[colnames(dt)=="dtco2.Cont.SAmerica"] <- "SAmerica"
+```
+
+
+At this point, this is the appearance of __dt__.
+
+
+```{r}
+head(dt, 5)
+```
+
+
+For the purpose of avoiding perfect collinearity, it is mandatory to exclude a recently created dummy variable (the choice felt on _Cont.Oceania_), which will serve as a reference category. Thus, if present on the final model, the $\beta$ associated to these dummies variables will represent the shifts of the function due to the Continent the country belongs to, being _Cont.Oceania_ the "base" constant.
+
+
+```{r}
+dt <- dt[,-14]
+```
+
+
+Additionally, Linear regression makes several assumptions about the data at hand:
+
+- __Linearity__ - the mean of the response variable is a linear function of the predictors or, by other words, the mean of the residuals is 0.
+- __Independence of the residuals__
+- __Normality of the residuals__
+- __Equal variance of the residuals__
+
+To simplify, these four assumtptions hold if the residuals are independent and identical distributed (i.i.d.) and if follow a normal distribution with mean equal to 0 and constant variance ($\sigma^{2}$) at any values of the predictors. 
+
+Moving on, in order to ease the diagnostic of the several linear regression assumptions, a function was created to analyse the respective errors.
+
+
+```{r  message=FALSE}
+library(lmtest) 
+
+line_assumptions <- function(x) {
+  par(mfrow=c(1,3))
+  
+  #Graph1 - Residuals vs Fitted Values
+  plot(x, 1)
+  
+  #Graph2 - QQ Plot of the Residuals
+  qqnorm(x$residuals, main = "QQ-Plot of Residuals")
+  qqline(x$residuals)
+  
+  #Graph3 - Histogram of Residuals
+  hist(x$residuals, main="Histogram of Residuals")
+
+  
+  #Test1 - Shapiro-Wilk Test (check normality of residuals)
+  print(shapiro.test(x$residuals))
+  
+  #Test2 - Breusch-Pagan Test (check for constant variance of residuals)
+  print(bptest(x))
+  
+  return(invisible())
+}
+```
+
+
+Aiming to build a model that could help to explain the variation in CO$_{2}$ emissions from country to country, the group chose the forward selection procedure. For that purpose, it will start with an empty model as the following.
+
+In addition, the sequential _Sum of Squares_ and _F-statistics_ are computed in order to choose the first variable to be considered in the model.
+
+
+```{r}
+mlr1 <- lm(CO2emi_t~1, data=dt)
+
+add1(mlr1, scope=names(dt[,-c(1,2)]), test="F", trace=TRUE)
+```
+
+
+Through the previous analysis, one can conclude that the first variable can be _ElConsCap_ since it has the smallest p-value for the sequential F-test. Once the variable is added to the model, it is time to check whether the assumptions hold or not.
+
+
+```{r fig.width = 10}
+mlr2 <- lm(CO2emi_t~ElConsCap_t, data=dt)
+
+line_assumptions(mlr2)
+```
+
+
+With the QQ Plot of the residuals one might suspect the residuals do not follow a normal distribution, which is proved by the Shapiro-Wilk test, since the null hypothesis of the residuals following a normal distribution is rejected with a p-value very close to 0. On another aspect, the variance of the residuals is also not constant by the analysis of the first plot and also by the Breusch-Pagan test (which also has a p-value close to 0, rejecting the hypothesis of constant variance).
+
+Due to the failure of such assumptions, it was decided to apply the logarithm to both dependent and independent variable, as seen in the following piece of code.
+
+
+```{r fig.width = 10}
+mlr2 <- lm(log(CO2emi_t)~log(ElConsCap_t), data=dt)
+
+line_assumptions(mlr2)
+```
+
+
+Now, one can say the assumptions hold in this initial model. Indeed, not only the graphical analysis indicates it, but also both the Shapiro-Wilk (to test for normality of the residuals) and the Breusch-Pagan test (to check for constant variance) have relatively high p-values, having no reasons to reject both null hypothesis.
+
+
+```{r}
+summary(mlr2)
+```
+
+
+The above summary indicates the Adjusted R-Squared is 0.8327, meaning 83.27% of the variation of the logarithm of CO$_{2}$ emissions is explained by the variation of the logarithm of electricity consumption per capita.
+
+Moreover, it is time to add a new variable and so, once again, the sequential f-statistics are computed. 
+
+
+```{r}
+variables_aftermlr2 <- names(dt) %in% c("country","CO2emi_t","ElConsCap_t")
+dt_aftermlr2 = dt[!variables_aftermlr2]
+
+add1(mlr2, scope=names(dt_aftermlr2), test="F", trace=TRUE)
+```
+
+
+Thus, it seems that adding the dummy variable _Asia_ might be a good option for the model.
+
+
+```{r fig.width = 10}
+mlr3 <- lm(log(CO2emi_t)~log(ElConsCap_t)+Asia, data=dt)
+
+line_assumptions(mlr3)
+```
+
+
+Testing if the assumptions hold, through the analysis of the QQ-Plot, there might be evidence pointing to the failure of the assumption related with the normality of the residuals. However, with the Shapiro-Wilk test, one does not have enough evidence to reject the null hypothesis of errors following a normal distribution (p=0.062). The other assumptions also seems to be holding.
+
+
+```{r}
+summary(mlr3)
+```
+
+
+The adjusted R-squared slightly increased (from 83.27%) and the coefficients of the predictors are all significant.
+
+
+```{r}
+variables_aftermlr3 <- names(dt) %in% c("country","CO2emi_t","ElConsCap_t","Asia")
+dt_aftermlr3 = dt[!variables_aftermlr3]
+
+add1(mlr3, scope=names(dt_aftermlr3), test="F", trace=TRUE)
+```
+
+
+Moving on, according to the sequential F-test, the variable _Upop_ would be the next one to be added to the model. However, as previously mentioned, this is a variable that has relatively high value of correlations between the variables in this dataset. Nevertheless, and having this into account, the group decided to add it and test the assumptions.
+
+
+```{r fig.width = 10}
+mlr4 <- lm(log(CO2emi_t)~log(ElConsCap_t)+Asia+Upop_t, data=dt)
+
+line_assumptions(mlr4)
+```
+
+
+Although the linearity and equal variances (Breusch-Pagan Test) assumptions seem to hold, the same cannot be stated for the normality one. The QQ-Plot (supported by the Shapiro-Wilk test) shows the residuals do not follow a normal distribution. 
+
+
+```{r}
+library(nortest)
+
+ad.test(mlr4$residuals)
+
+ks.test(mlr4$residuals,"pnorm")
+
+```
+
+
+The previous code applies the non-parametric tests of Anderson-Darling and Kolmogorov-Smirnov to the residuals. As infered from the residuals, it clearly shows the assumption of errors' normality is violated. However, according to several studies, the normality assumption is hard to hold and if the sample size is large enough, one can assume the Central Limit Theorem still holds, not contributing to bias or inefficiency in regression models. As such, the group will proceed with the addition of the next variable to the model. 
+ 
+ 
+```{r}
+summary(mlr4)
+```
+ 
+ 
+ The adjusted R-Squared increased from 83.96% to 84.26%.
+ 
+ 
+```{r}
+variables_aftermlr4 <- names(dt) %in% c("country","CO2emi_t","ElConsCap_t","Asia", "Upop_t")
+dt_aftermlr4 = dt[!variables_aftermlr4]
+
+add1(mlr4, scope=names(dt_aftermlr4), test="F", trace=TRUE)
+```
+
+
+The next added variable seems to be _ElRenProd_. And so, the assumptions are checked once this variable is added to the model.
+
+
+```{r fig.width = 10}
+mlr5 <- lm(log(CO2emi_t)~log(ElConsCap_t)+Asia+Upop_t+ElRenProd_t, data=dt)
+
+line_assumptions(mlr5)
+```
+
+
+Once again, the normality assumption does not hold, contrary to the other ones. Following the decision previously explained, the group will continue to building the model.
+
+
+```{r}
+summary(mlr5)
+```
+
+
+While the coefficients of every variable are significant (at least with a 90% confidence level), the Adjusted R-Square also slightly increased to 84.73%.
+
+
+```{r}
+variables_aftermlr5 <- names(dt) %in% c("country","CO2emi_t","ElConsCap_t","Asia", "Upop_t", "ElRenProd_t" )
+dt_aftermlr5 = dt[!variables_aftermlr5]
+
+add1(mlr5, scope=names(dt_aftermlr5), test="F", trace=TRUE)
+```
+
+
+As the previously sequential F-statistics shows, there is no more variable worth to be added to the model. Consequently, the final model is found.
+
+
+```{r}
+mlr_final <- mlr5
+
+summary(mlr_final)
+
+```
+
+
+
+
+
+$$\log{(CO2emi)}_i = \beta_0 + \beta_1 \log{(ElConsCap)}_i + \beta_2 Asia_i + \beta_3 Upop_i + \beta_4 ElRenProd_i + \epsilon_i$$
+
+
+Once the final model is established, it is time to interpret the coefficients of each variable:
+
+- __log(ElConsCap)__ - a change of 1% in the consumption of electricity per capity, it is expected a positive 0,84% change in the CO$_{2}$ emissions per capita, on average, _ceteris paribus_
+- __Asia__ - if the country is Asian, it is expected a positive 18,01% change in the CO$_{2}$ emissions per capita, on average, _ceteris paribus_
+- __Upop__ - with an increase of one thousand people in the urban population, it is expected a positive 0,00045% change in the CO$_{2}$ emissions per capita, on average, _ceteris paribus_
+- __ElRenProd__ - with an increase of one million of kWh produced from renewable sources, it is expected a 0,00058% change in the CO$_{2}$ emissions per capita, on average, _ceteris paribus_
+
+On another hand, the p-value (2.2e^-16^) from the F-Test of Overall Significance allows to reject the null hypothesis that states the model with no independent variables fits the data.
+
+Finally, it seems important to state the Adjusted R-Squared has been increasing since the empty model, reaching a final value of 84.73%. This means 84.73% of the variation of the logarithm of CO$_{2}$ emissions is explained by the variation of the model's predictors.
+
+Nevertheless, to conclude, it is important to bear in mind this model was built by applying the forward selection approach. Using another approach might result in a different model composed by other predictors. In addition, taking into account the adjusted R-Squared, one can conclude this model is expected to have a good performance in predicting the CO$_{2}$ emissions per capita but might not be the best one. In future researches, it would be interesting to apply different selection methods and compare to the model here obtained.
+
+
+
+
+
+
+### Time Series Analysis - ARIMA Model
+
+
+As seen through the multiple regression analysis, the production of electricity from renewable sources is related with the CO$_{2}$ emissions of a certain country. With the Kyoto Protocol in 2005 and, more recently, the Paris Agreement in 2016, it seemed interesting to study how the electricity production from renewables sources has evolved in the past 10 years, specifically in Portugal.
+
+As such, this led the group to perform a second analysis by building a time series model of the electricity production from renewable sources in Portuguese territory.
+
+For that purpose, the group will apply the __Box-Jenkins Methodology__, starting by __(1)__ checking the stationarity of the time series, __(2)__ identification of the model to be applied, followed by __(3)__ the estimation of the coefficients, __(4)__ ending with the diagnosis of the residuals of such model.
+
+Finally, one the proper model is chosen and checked, it will be time to forecast the values for the next 12 months.
+
+But firstly, the data must be imported. In the following plot, one is able to observe how the electricity production from renewable sources (in Gwh) has been evolving since January 2008.
+
+
+```{r message=FALSE}
+
+library(forecast)
+library(fpp)
+
+prodren <- read_excel("datasets/RenProd_PT.xlsx")
+
+prodren.ts <- ts(prodren[2], frequency=12, start=2008)
+
+plot(prodren.ts,  main="Portugal - Electric Production from Renewable Sources", xlab="Year", ylab="Gwh")
+
+```
+
+
+
+The first question the group must answer is whether the time series is stationary or not. To be possible to model it and forecasting, the series must be at least weakly stationary, which means:
+
+- The mean E(xt) is the same for all t (taking into consideration the existence of seasonality)
+- The variance of xt is the same for all t.
+- The covariance (and also the correlation) between x$_{t}$ and x$_{t-h}$ is the same for all t
+
+Starting with the mean, it is clear this series has a positive trend. However, it is also important to analyse the seasonality.
+
+
+```{r}
+monthplot(prodren.ts, main="Portugal - Electric Production from Renewable Sources per Month", xlab="Month", ylab="Gwh")
+```
+
+
+
+Regarding the seasonality, with the previous plot, one might conclude the mean of the time series is not the same for each month. Indeed, it seems during the Summer (June-September), the production of electricity is considerably lower when compared to the remaining months. As such, there is seasonality in this time series.
+
+The next aspect to inspect is the variance. By performing a Box-Cox test and checking the result lambda, it is possible to draw some conclusions about it. 
+
+
+
+```{r}
+lambda <- BoxCox.lambda(prodren.ts)
+lambda
+```
+
+
+As shown, the lambda is significantly different than 1, indicating the variance is not constant throughout the series (which was already suggested by its plot). Thus, being the lambda highly close to zero, there should be a logarithmic tansformation on the series' values. Besides this transformation, as previous mentioned, there should also be a differencing transformation either on the non--seasonal part of the time series as well as on the seasonal one.
+
+
+```{r}
+plot(diff(diff(log(prodren.ts)), lag=12),main="Portugal - Electric Production from Renewable Sources", xlab="Year", ylab="log(Gwh)")
+```
+
+
+
+After the three transformations, the time series seems now like a stationary one or, at least, a weak one.
+
+Using two functions from the _tseries_ library, it was possible to see the number of differences recommended to this series. 
+
+
+```{r}
+library('tseries')
+
+ndiffs(prodren.ts) #recommended differences in nonseasonal part
+nsdiffs(prodren.ts) #recommended differences in seasonal part
+```
+
+
+These functions suggests both a seasonal difference and a non-seasona one, which matches with the previous transformations. 
+
+After reducing the trend and seasonality and correcting the variance, it is time to analyse the Autocorrelation Function and the Partial Autocorrelation Function by ploting them.
+
+
+```{r}
+par(mfrow=c(1,2))
+acf(diff(diff(log(prodren.ts)),
+         lag=12), lag.max=48, main="ACF")
+pacf(diff(diff(log(prodren.ts)),
+          lag=12), lag.max=48, main="PACF")
+```
+
+
+Regarding the non-seasonal part of the model, there is a significant spyke, indicating a moving average or order 1. Additionally, in the PACF, there seems to be two significant spykes, indicating autoregression order of 2.
+
+As for the seasonal one, there is asignificant spyke on lag 12 (MA(1)), while on the PACF also the lag 12 presents a significant spyke.
+
+In the next few steps, several models are going to be tested and, in the the end, the one with lower AIC will be the final choice (we considered the sample large enough to not consider AICc as the criteria).
+To begin with, due to the plots' analysis, the first model to be tested will be (2,1,1)(1,1,1)$_{12}$.
+
+
+```{r}
+fit1 <- arima(log(prodren.ts), order=c(2,1,1), seasonal=c(1,1,1))
+fit1
+```
+
+
+
+It is possible to see the coefficients _ar1_, _ar2_ and _sar1_ are not significant with 95% confidence. Thus, in the next model, the order paramenters to be tested is the following (1,1,1)(0,1,1)$_{12}$.
+
+
+```{r}
+fit2 <- arima(log(prodren.ts), order=c(1,1,1), seasonal=c(0,1,1))
+fit2
+
+```
+
+
+
+The AIC slightly decreased (from -67.83 to -70.82). Nevertheless, the coefficient of _ar1_ is still not significant. Therefore, the next try will be (0,1,1)(0,1,1)$_{12}$.
+
+
+```{r}
+fit3 <- arima(log(prodren.ts), order=c(0,1,1), seasonal=c(0,1,1))
+fit3
+```
+
+
+
+Once again, the AIC decreased to -72.2, with the two coefficients being significant with 95% confidence.
+
+At this point, in order to test one more model, the R's _auto.arima_ function was used.
+
+
+```{r}
+fit4 <- auto.arima(log(prodren.ts), d=1, D=1)
+fit4
+```
+
+
+As seen above, the auto.arima recommends a model with (0,1,1)(2,1,0)$_{12}$. Besides the fact of this recommended model having a higher AIC, it seems interesting that the choice of parameters for the non-seasonal part is exactly equal to the one from the third model tested, with the seasonal one being completelly different.
+
+To sum up, the following table contains the four models tested and the respective AICs.
+
+
+```{r}
+modelAIC <- data.frame("Model" = c("fit1","fit2","fit3","Auto.Arima"),
+                       "NonSeasonal" = c("(2,1,1)","(1,1,1)","(0,1,1)","(0,1,1)"),
+                       "Seasonal" = c("(1,1,1)","(0,1,1)","(0,1,1)","(2,1,0)"),
+                       "AIC" = c(-67.83,-70.82,-72.2,-57.69))
+
+modelAIC
+```
+
+
+In such table, one might conclude the third model __fit3__ is the one with the lowest AIC and so, the one to be further diagnosed and used.
+
+It is time now to analyse the behavior of the residuals from the third model _fit3_.
+
+
+```{r}
+tsdiag(fit3)
+```
+
+
+
+Regarding the first plot, there seems to be white noise in the residuals, since they do not shown any visible pattern. As for the second plot, there is no significant spyke in the residuals' AFC. Finally, all the p-values from the Ljung-Box statistic seems to be further away from 0. Nevertheless, to test the independence of the residuals, the portmanteau test will be performed.
+
+
+```{r}
+Box.test(residuals(fit3), lag=12, fitdf=2, type='Ljung')
+```
+
+
+Since the null hypothesis of this Box-Ljung Test states the residuals are independent, with a p-value of 0.76, there are no reasons to reject such hypothesis. Yet, for the next step of forecasting, a final test seemed important to perform: the normality of the model's residuals.
+
+
+```{r}
+shapiro.test(fit3$residuals)
+```
+
+
+
+With that in mind, a Shapiro-Wilk test was performed, which resulted in a p-value of 0.368. Thus, there is no evidence to reject the hypothesis of these residuals following a Normal distribution.
+
+Consequently, using the _predict_ function of R, the values for the next twelve months were predicted, as well as the respective standard errors.
+
+
+```{r}
+fore <- predict(fit3, n.ahead=12)
+fore
+
+```
+
+
+
+Finally, in order to plot these predictions, the logarithmic transformation must be undone. For that, the lower (L) and upper (U) limits for the Confidence Interval of the predicted values were computed. When ploting all the values, an exponential transformation is performed, in order to the predicted values be on the same unit as the initial time series.
+
+
+```{r}
+U = fore$pred + 2*fore$se
+L = fore$pred - 2*fore$se
+predicted = fore$pred
+
+ts.plot(prodren.ts, xlim=c(2008,2020.5), ylim=c(0,2650), main="Portugal - Electric Production from Renewable Sources", xlab="Year", ylab="Gwh")
+lines(exp(predicted), col="red")
+lines(exp(U), col="blue", lty="dashed")
+lines(exp(L), col="blue", lty="dashed")
+
+
+```
+
+
+To an easier visualization, the following plot will represent only the observations since May 2018.
+
+
+```{r}
+ts.plot(prodren.ts, xlim=c(2018.5,2020.5), ylim=c(0,2650), main="Portugal - Electric Production from Renewable Sources", xlab="Year", ylab="Gwh")
+lines(exp(predicted), col="red")
+lines(exp(U), col="blue", lty="dashed")
+lines(exp(L), col="blue", lty="dashed")
+```
+
+
+As it is possible to infer, these predictions match the initial insights retrieved from the seasonality. As mentioned before, the Summer months register lower values when compare to the Winter ones, represented in the right side of this red line.
+
+To conclude, there are several factors that explain the levels of CO$_{2}$ emissions from a country. Although this research focused essentially on agriculture and demographic variables, the truth is the economic situation might also play an essential role on the greenhouse gases emissions, which would be interesting to analyse in future studies. In the specific case of Portugal, the recent growth of electricity production from renewable sources represents a clear urge to tackle an issue that has contributed to a climate crisis, a problem that jeopardizes not only the future of the human race but all the planet's ecosystem as well. 
+
+
